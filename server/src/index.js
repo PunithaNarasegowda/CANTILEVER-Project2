@@ -6,7 +6,6 @@ import { connectDatabase } from './db.js';
 import tasksRouter from './routes/tasks.js';
 
 dotenv.config();
-
 const app = express();
 const port = process.env.PORT || 4000;
 

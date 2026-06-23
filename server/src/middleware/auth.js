@@ -1,9 +1,15 @@
+import dotenv from 'dotenv';
+dotenv.config();
 import admin from 'firebase-admin';
 
-const hasFirebaseAdminConfig =
-  process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY;
-
-if (hasFirebaseAdminConfig && !admin.apps.length) {
+function hasFirebaseAdminConfig() {
+  return (
+    process.env.FIREBASE_PROJECT_ID &&
+    process.env.FIREBASE_CLIENT_EMAIL &&
+    process.env.FIREBASE_PRIVATE_KEY
+  );
+}
+ if (hasFirebaseAdminConfig() && !admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
@@ -46,7 +52,7 @@ export async function requireUser(req, res, next) {
     return next();
   }
 
-  if (!hasFirebaseAdminConfig) {
+  if (!hasFirebaseAdminConfig()) {
     return res.status(401).json({ message: 'Firebase Admin credentials are not configured.' });
   }
 

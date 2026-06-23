@@ -3,7 +3,11 @@ import mongoose from 'mongoose';
 let connected = false;
 
 export async function connectDatabase() {
+  console.log("connectDatabase called");
+
   const uri = process.env.MONGODB_URI;
+
+  console.log("URI exists:", !!uri);
 
   if (!uri) {
     connected = false;
@@ -15,9 +19,8 @@ export async function connectDatabase() {
     return true;
   }
 
-  await mongoose.connect(uri, {
-    autoIndex: true,
-  });
+  await mongoose.connect(uri);
+
 
   connected = true;
   return true;
