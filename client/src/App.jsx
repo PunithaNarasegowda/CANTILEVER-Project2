@@ -23,7 +23,7 @@ import {
 import { authService } from './lib/auth';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
-
+console.log("API_BASE =", API_BASE);
 const motionVariants = {
   hidden: { opacity: 0, y: 18, scale: 0.985 },
   show: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.45, ease: 'easeOut' } },
