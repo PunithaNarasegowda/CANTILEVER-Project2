@@ -3,6 +3,7 @@ import {
   createUserWithEmailAndPassword,
   getAuth,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
 } from 'firebase/auth';
@@ -160,5 +161,19 @@ export const authService = {
     }
 
     writeDemoSession(null);
+  },
+  async resetPassword(email) {
+    if (firebaseAuth) {
+      await sendPasswordResetEmail(firebaseAuth, email);
+      return { message: 'Password reset email sent.' };
+    }
+
+    if (!email) {
+      throw new Error('Enter an email address to continue.');
+    }
+
+    return {
+      message: 'Demo mode active. Password reset is simulated locally.',
+    };
   },
 };

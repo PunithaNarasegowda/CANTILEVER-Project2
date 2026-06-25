@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowUpDown,
@@ -63,6 +63,12 @@ const priorityLabels = {
   high: 'High',
 };
 
+const priorityOrder = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
+
 async function apiRequest(session, path, options = {}) {
   const headers = new Headers(options.headers || {});
   headers.set('Content-Type', 'application/json');
@@ -115,6 +121,49 @@ function emptyStats(tasks) {
   };
 }
 
+function matchesTaskFilters(task, filters) {
+  const search = filters.q.trim().toLowerCase();
+
+  const matchesSearch =
+    !search ||
+    task.title.toLowerCase().includes(search) ||
+    task.description.toLowerCase().includes(search) ||
+    (task.tags || []).some((tag) => tag.toLowerCase().includes(search));
+
+  const matchesStatus = filters.status === 'all' || task.status === filters.status;
+
+  return matchesSearch && matchesStatus;
+}
+
+function compareTasks(left, right, sort) {
+  if (sort === 'oldest') {
+    return new Date(left.createdAt) - new Date(right.createdAt);
+  }
+
+  if (sort === 'due') {
+    const leftDue = left.dueDate ? new Date(left.dueDate).getTime() : Number.POSITIVE_INFINITY;
+    const rightDue = right.dueDate ? new Date(right.dueDate).getTime() : Number.POSITIVE_INFINITY;
+
+    if (leftDue !== rightDue) {
+      return leftDue - rightDue;
+    }
+
+    return new Date(right.createdAt) - new Date(left.createdAt);
+  }
+
+  if (sort === 'priority') {
+    const rankDelta = priorityOrder[left.priority] - priorityOrder[right.priority];
+
+    if (rankDelta !== 0) {
+      return rankDelta;
+    }
+
+    return new Date(right.createdAt) - new Date(left.createdAt);
+  }
+
+  return new Date(right.createdAt) - new Date(left.createdAt);
+}
+
 function Badge({ children, tone = 'neutral' }) {
   return <span className={`badge badge-${tone}`}>{children}</span>;
 }
@@ -131,7 +180,6 @@ function App() {
   const [taskLoading, setTaskLoading] = useState(false);
   const [taskError, setTaskError] = useState('');
   const [filters, setFilters] = useState({ q: '', status: 'all', sort: 'recent' });
-  const deferredQuery = useDeferredValue(filters.q);
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
@@ -163,21 +211,7 @@ function App() {
       setTaskError('');
 
       try {
-        const params = new URLSearchParams();
-
-        if (deferredQuery.trim()) {
-          params.set('q', deferredQuery.trim());
-        }
-
-        if (filters.status !== 'all') {
-          params.set('status', filters.status);
-        }
-
-        if (filters.sort !== 'recent') {
-          params.set('sort', filters.sort);
-        }
-
-        const response = await apiRequest(session, `/tasks${params.toString() ? `?${params}` : ''}`);
+        const response = await apiRequest(session, '/tasks');
 
         if (active) {
           setTasks(response.tasks || []);
@@ -198,10 +232,32 @@ function App() {
     return () => {
       active = false;
     };
-  }, [session, deferredQuery, filters.status, filters.sort]);
+  }, [session]);
 
   const stats = useMemo(() => emptyStats(tasks), [tasks]);
   const completion = useMemo(() => taskProgress(tasks), [tasks]);
+
+  const filteredTasks = useMemo(() => {
+    return [...tasks].filter((task) => matchesTaskFilters(task, filters)).sort((left, right) => compareTasks(left, right, filters.sort));
+  }, [tasks, filters]);
+
+  const filterSummary = useMemo(() => {
+    const active = [];
+
+    if (filters.q.trim()) {
+      active.push(`Search: ${filters.q.trim()}`);
+    }
+
+    if (filters.status !== 'all') {
+      active.push(`Status: ${statusOptions.find((option) => option.value === filters.status)?.label || filters.status}`);
+    }
+
+    if (filters.sort !== 'recent') {
+      active.push(`Sort: ${sortOptions.find((option) => option.value === filters.sort)?.label || filters.sort}`);
+    }
+
+    return active;
+  }, [filters]);
 
   const handleAuthSubmit = async (event) => {
     event.preventDefault();
@@ -256,21 +312,7 @@ function App() {
   };
 
   const reloadTasks = async () => {
-    const params = new URLSearchParams();
-
-    if (deferredQuery.trim()) {
-      params.set('q', deferredQuery.trim());
-    }
-
-    if (filters.status !== 'all') {
-      params.set('status', filters.status);
-    }
-
-    if (filters.sort !== 'recent') {
-      params.set('sort', filters.sort);
-    }
-
-    const response = await apiRequest(session, `/tasks${params.toString() ? `?${params}` : ''}`);
+    const response = await apiRequest(session, '/tasks');
     setTasks(response.tasks || []);
   };
 
@@ -363,7 +405,7 @@ function App() {
     }
   };
 
-  const visibleTasks = tasks;
+  const visibleTasks = filteredTasks;
 
   return (
     <div className="app-shell">
@@ -387,6 +429,7 @@ function App() {
           tasks={visibleTasks}
           taskLoading={taskLoading}
           taskError={taskError}
+          filterSummary={filterSummary}
           openComposer={openComposer}
           removeTask={removeTask}
           updateTaskStatus={updateTaskStatus}
@@ -424,6 +467,7 @@ function Dashboard({
   tasks,
   taskLoading,
   taskError,
+  filterSummary,
   openComposer,
   removeTask,
   updateTaskStatus,
@@ -511,48 +555,52 @@ function Dashboard({
               <p className="eyebrow">Filters</p>
               <h3>Shape the board</h3>
             </div>
-            <Badge tone="neutral">Realtime</Badge>
+            <Badge tone="neutral">{visibleTasks.length} shown</Badge>
           </div>
 
-          <div className="filters-row">
-            <label className="search-field">
+          <div className="filter-stack">
+            <label className="search-field glass-field">
               <Search size={16} />
               <input
                 type="search"
-                placeholder="Search tasks"
+                placeholder="Search titles, tags, notes"
                 value={filters.q}
                 onChange={(event) => setFilters((current) => ({ ...current, q: event.target.value }))}
               />
             </label>
 
-            <div className="select-grid">
-              <label className="select-field">
-                <span>Status</span>
-                <select
-                  value={filters.status}
-                  onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}
+            <div className="chip-row" role="tablist" aria-label="Task status filters">
+              {statusOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={filters.status === option.value ? 'chip active' : 'chip'}
+                  onClick={() => setFilters((current) => ({ ...current, status: option.value }))}
                 >
-                  {statusOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  {option.label}
+                </button>
+              ))}
+            </div>
 
-              <label className="select-field">
-                <span>Sort</span>
-                <select
-                  value={filters.sort}
-                  onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))}
-                >
-                  {sortOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <label className="select-field glass-field">
+              <span>Sort</span>
+              <select
+                value={filters.sort}
+                onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))}
+              >
+                {sortOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="filters-footer">
+              <button type="button" className="text-button" onClick={() => setFilters({ q: '', status: 'all', sort: 'recent' })}>
+                Clear filters
+              </button>
+              <span>{filterSummary.length ? filterSummary.join(' • ') : 'No filters applied'}</span>
             </div>
           </div>
         </motion.div>
@@ -572,10 +620,10 @@ function Dashboard({
           {taskError ? <div className="error-banner">{taskError}</div> : null}
           {taskLoading ? <div className="inline-loading">Syncing tasks…</div> : null}
 
-          <AnimatePresence>
-            {tasks.length ? (
+          <AnimatePresence mode="wait">
+            {visibleTasks.length ? (
               <motion.div className="task-grid" variants={staggerContainer} initial="hidden" animate="show">
-                {tasks.map((task) => (
+                {visibleTasks.map((task) => (
                   <TaskCard
                     key={task.id}
                     task={task}
@@ -586,7 +634,7 @@ function Dashboard({
                 ))}
               </motion.div>
             ) : (
-              <EmptyState onCreate={() => openComposer()} />
+              <EmptyState onCreate={() => openComposer()} filtersActive={filterSummary.length > 0} clearFilters={() => setFilters({ q: '', status: 'all', sort: 'recent' })} />
             )}
           </AnimatePresence>
         </motion.div>
@@ -768,17 +816,22 @@ function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
   );
 }
 
-function EmptyState({ onCreate }) {
+function EmptyState({ onCreate, filtersActive, clearFilters }) {
   return (
     <motion.div className="empty-state" variants={motionVariants}>
       <div className="empty-mark">
         <LucideSparkles size={26} />
       </div>
-      <h4>Your board is clear.</h4>
-      <p>Create the first card to give the workspace a pulse.</p>
+      <h4>{filtersActive ? 'No tasks match those filters.' : 'Your board is clear.'}</h4>
+      <p>{filtersActive ? 'Try widening the filters or clearing the search to reveal tasks.' : 'Create the first card to give the workspace a pulse.'}</p>
       <button className="primary-button" onClick={onCreate}>
         <Plus size={16} /> New task
       </button>
+      {filtersActive ? (
+        <button className="ghost-button" onClick={clearFilters} type="button">
+          Clear filters
+        </button>
+      ) : null}
     </motion.div>
   );
 }
@@ -799,7 +852,7 @@ function TaskEditorModal({ editingTask, taskForm, setTaskForm, saveTask, closeMo
             <p className="eyebrow">Task editor</p>
             <h3>{editingTask ? 'Edit task' : 'Create task'}</h3>
           </div>
-          <button className="ghost-button small" onClick={closeModal}>
+          <button className="ghost-button small" type="button" onClick={closeModal}>
             Close
           </button>
         </div>
