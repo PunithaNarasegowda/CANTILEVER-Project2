@@ -35,9 +35,9 @@ import {
   Zap,
 } from 'lucide-react';
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { API_BASE } from './apiConfig';
 import { authService } from './lib/auth';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
 const fadeUp = {
   hidden: { opacity: 0, y: 16, scale: 0.985 },
   show: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.42, ease: 'easeOut' } },
